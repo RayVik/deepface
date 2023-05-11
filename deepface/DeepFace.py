@@ -391,6 +391,7 @@ def find(
     align=True,
     normalization="base",
     silent=False,
+    threshold_split=True,
 ):
 
     """
@@ -418,6 +419,9 @@ def find(
             dlib or mediapipe
 
             silent (boolean): disable some logging and progress bars
+
+            threshold_split (boolean): disable or enable threshold, if disable 'dataframes' results
+            will contain all distances
 
     Returns:
             This function returns list of pandas data frame. Each item of the list corresponding to
@@ -579,9 +583,10 @@ def find(
 
         result_df[f"{model_name}_{distance_metric}"] = distances
 
-        threshold = dst.findThreshold(model_name, distance_metric)
         result_df = result_df.drop(columns=[f"{model_name}_representation"])
-        result_df = result_df[result_df[f"{model_name}_{distance_metric}"] <= threshold]
+        if threshold_split:
+            threshold = dst.findThreshold(model_name, distance_metric)
+            result_df = result_df[result_df[f"{model_name}_{distance_metric}"] <= threshold]
         result_df = result_df.sort_values(
             by=[f"{model_name}_{distance_metric}"], ascending=True
         ).reset_index(drop=True)
