@@ -481,6 +481,7 @@ def find(
                         (".jpg" in file.lower())
                         or (".jpeg" in file.lower())
                         or (".png" in file.lower())
+                        or (".webp" in file.lower())
                     ):
                         exact_path = r + "/" + file
                         employees.append(exact_path)
