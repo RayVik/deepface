@@ -385,7 +385,21 @@ def analyze(
             resp_objects.append(obj)
 
     return resp_objects
+def transform_vector(vector):
+    """
+    Перерасчет вектора
+    """
+    return [vector,np.sqrt(np.sum(np.multiply(vector, vector)))]
 
+def prepocessing_model(path):
+    """
+    Переписать вектора
+    """
+    with open(path, 'rb') as f:
+        model = pickle.load(f)
+    model = [[case[0], transform_vector(case[1])] for case in tqdm(model)]
+    with open(path, 'wb') as f:
+        pickle.dump(model, f)
 
 def find(
     img_path,
@@ -537,7 +551,7 @@ def find(
 
             with open(f"{db_path}/{file_name}", "wb") as f:
                 pickle.dump(representations, f)
-
+            prepocessing_model(path=f"{db_path}/{file_name}")
             if not silent:
                 print(
                     f"Representations stored in {db_path}/{file_name} file."
@@ -574,6 +588,7 @@ def find(
         )
 
         target_representation = target_embedding_obj[0]["embedding"]
+        target_representation = transform_vector(target_representation)
 
         result_df = df.copy()  # df will be filtered in each img
         result_df["source_x"] = target_region["x"]

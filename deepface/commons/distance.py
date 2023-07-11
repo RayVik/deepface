@@ -1,11 +1,10 @@
 import numpy as np
 
 
-def findCosineDistance(source_representation, test_representation):
-    a = np.matmul(np.transpose(source_representation), test_representation)
-    b = np.sum(np.multiply(source_representation, source_representation))
-    c = np.sum(np.multiply(test_representation, test_representation))
-    return 1 - (a / (np.sqrt(b) * np.sqrt(c)))
+def findCosineDistance(case_vector1,
+                       case_vector2,):
+    a = np.matmul(np.transpose(case_vector1[0]), case_vector2[0])
+    return 1 - (a / (case_vector1[1] * case_vector2[1]))
 
 
 def findEuclideanDistance(source_representation, test_representation):
