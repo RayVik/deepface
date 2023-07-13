@@ -2,6 +2,7 @@
 import os
 from os import path
 import warnings
+from sklearn.metrics.pairwise import cosine_similarity
 import time
 import pickle
 import logging
@@ -431,7 +432,9 @@ def find_custom(
         normalization="base",
         silent=False,
         threshold_split=True,
-        db_dataframe=None
+        db_dataframe=None,
+        dataset_df_add=None,
+        method_distance=1
 ):
     """
     This function applies verification several times and find the identities in a database
@@ -486,7 +489,6 @@ def find_custom(
         align=align,
     )
     target_img, target_region, _ = target_objs[0]
-
     target_embedding_obj = represent(
         img_path=target_img,
         model_name='ArcFace',
@@ -495,47 +497,70 @@ def find_custom(
         align=False,
         normalization='base',
     )
-
+    column_dictance = f"{model_name}_{distance_metric}"
     target_representation = target_embedding_obj[0]["embedding"]
     target_representation = transform_vector(target_representation)
+    if method_distance == 1:
+        def calc_distances(data_list, conn):
+            dis = []
+            for i in range(len(data_list)):
+                # data_list[i][1] = dst.findCosineDistance(data_list[i][1], target_representation)
+                dis.append([data_list[i][0], dst.findCosineDistance(data_list[i][1], target_representation)])
+            conn.send(dis)
+            conn.close()
 
-    def calc_distances(data_list, conn):
-        dis = []
-        for i in range(len(data_list)):
-            # data_list[i][1] = dst.findCosineDistance(data_list[i][1], target_representation)
-            dis.append([data_list[i][0], dst.findCosineDistance(data_list[i][1], target_representation)])
-        conn.send(dis)
-        conn.close()
+        df_list_splitted_ids = split_batch(db_dataframe, 5000)
+        splitted_on = len(df_list_splitted_ids)
+        print(df_list_splitted_ids)
+        print(f'splitted on {str(splitted_on)} parts')
 
-    df_list_splitted_ids = split_batch(db_dataframe, 5000)
-    splitted_on = len(df_list_splitted_ids)
-    print(df_list_splitted_ids)
-    print(f'splitted on {str(splitted_on)} parts')
+        processes = []
+        pipe_connects = []
+        distances = []
+        for batch_ids in df_list_splitted_ids:
+            parent_conn, child_conn = multiprocessing.Pipe()
+            case_proc = multiprocessing.Process(target=calc_distances,
+                                                args=(db_dataframe[batch_ids[0]:batch_ids[1]], child_conn,))
+            processes.append(case_proc)
+            pipe_connects.append(parent_conn)
 
-    processes = []
-    pipe_connects = []
-    distances = []
-    for batch_ids in df_list_splitted_ids:
-        parent_conn, child_conn = multiprocessing.Pipe()
-        case_proc = multiprocessing.Process(target=calc_distances,
-                                            args=(db_dataframe[batch_ids[0]:batch_ids[1]], child_conn,))
-        processes.append(case_proc)
-        pipe_connects.append(parent_conn)
+        for process in processes:
+            process.start()
 
-    for process in processes:
-        process.start()
+        for pipe_connect in pipe_connects:
+            distances = distances + pipe_connect.recv()
 
-    for pipe_connect in pipe_connects:
-        distances = distances + pipe_connect.recv()
+        for process in processes:
+            process.join()
 
-    for process in processes:
-        process.join()
+        # for i in range(len(db_dataframe)):
+        #     db_dataframe[i][1] = dst.findCosineDistance(db_dataframe[i][1], target_representation)
 
-    # for i in range(len(db_dataframe)):
-    #     db_dataframe[i][1] = dst.findCosineDistance(db_dataframe[i][1], target_representation)
+        column_dictance = f"{model_name}_{distance_metric}"
+        result_df = pd.DataFrame(distances, columns=["identity", column_dictance])
 
-    column_dictance = f"{model_name}_{distance_metric}"
-    result_df = pd.DataFrame(distances, columns=["identity", column_dictance])
+    elif method_distance == 2:
+
+        model = dataset_df_add
+
+        # Предсказание для входного вектора
+        vector_target = target_representation[0]
+        pts = np.stack(vector_target)
+        result = model.query(pts, 10, workers=-1, p=1)
+        df = pd.DataFrame(result, index=['cosine', 'index_img']).T
+
+        # Отбор по индексу
+        df['identity'] = df['index_img'].apply(lambda x: db_dataframe[int(x)][0])
+        df['cosine'] = df['cosine'] / 100
+        df = df.drop(columns=['index_img'])
+        result_df = df.rename(columns={'cosine': column_dictance})
+    elif method_distance == 3:
+        model = dataset_df_add
+        target_vector = np.array([target_representation[0]])
+        similarities = cosine_similarity(model, target_vector)
+        result_df = pd.DataFrame(db_dataframe, columns=["identity", 'mas']).drop(columns=['mas'])
+        result_df['cosine'] = 1 - similarities
+        result_df = result_df.rename(columns={'cosine': column_dictance})
 
     if threshold_split:
         threshold = dst.findThreshold(model_name, distance_metric)
