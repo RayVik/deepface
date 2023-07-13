@@ -38,11 +38,12 @@ os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
 tf_version = int(tf.__version__.split(".", maxsplit=1)[0])
 if tf_version == 2:
     tf.get_logger().setLevel(logging.ERROR)
+
+
 # -----------------------------------
 
 
 def build_model(model_name):
-
     """
     This function builds a deepface model
     Parameters:
@@ -87,34 +88,16 @@ def build_model(model_name):
     return model_obj[model_name]
 
 
-def split_batch(mas, size):
-    """
-    Divide the input list into batches and create a two-dimensional list with indices
-    """
-    len_mas = len(mas)
-
-    mas_batch_id = []
-    for start in range(0, len_mas, size):
-        end = start + size
-        if end > len_mas:
-            end = len_mas
-
-        mas_batch_id.append([start, end])
-
-    return mas_batch_id
-
-
 def verify(
-    img1_path,
-    img2_path,
-    model_name="VGG-Face",
-    detector_backend="opencv",
-    distance_metric="cosine",
-    enforce_detection=True,
-    align=True,
-    normalization="base",
+        img1_path,
+        img2_path,
+        model_name="VGG-Face",
+        detector_backend="opencv",
+        distance_metric="cosine",
+        enforce_detection=True,
+        align=True,
+        normalization="base",
 ):
-
     """
     This function verifies an image pair is same person or different persons. In the background,
     verification function represents facial images as vectors and then calculates the similarity
@@ -137,9 +120,9 @@ def verify(
 
             detector_backend (string): set face detector backend to opencv, retinaface, mtcnn, ssd,
             dlib or mediapipe
-            
+
             align (boolean): alignment according to the eye positions.
-            
+
             normalization (string): normalize the input image before feeding to model
 
     Returns:
@@ -246,14 +229,13 @@ def verify(
 
 
 def analyze(
-    img_path,
-    actions=("emotion", "age", "gender", "race"),
-    enforce_detection=True,
-    detector_backend="opencv",
-    align=True,
-    silent=False,
+        img_path,
+        actions=("emotion", "age", "gender", "race"),
+        enforce_detection=True,
+        detector_backend="opencv",
+        align=True,
+        silent=False,
 ):
-
     """
     This function analyzes facial attributes including age, gender, emotion and race.
     In the background, analysis function builds convolutional neural network models to
@@ -273,7 +255,7 @@ def analyze(
 
             detector_backend (string): set face detector backend to opencv, retinaface, mtcnn, ssd,
             dlib or mediapipe.
-            
+
             align (boolean): alignment according to the eye positions.
 
             silent (boolean): disable (some) log messages
@@ -403,11 +385,14 @@ def analyze(
             resp_objects.append(obj)
 
     return resp_objects
+
+
 def transform_vector(vector):
     """
     Перерасчет вектора
     """
-    return [vector,np.sqrt(np.sum(np.multiply(vector, vector)))]
+    return [vector, np.sqrt(np.sum(np.multiply(vector, vector)))]
+
 
 def prepocessing_model(path):
     """
@@ -419,31 +404,35 @@ def prepocessing_model(path):
     with open(path, 'wb') as f:
         pickle.dump(model, f)
 
+def split_batch(mas, size):
+    """
+    Divide the input list into batches and create a two-dimensional list with indices
+    """
+    len_mas = len(mas)
 
-def to_dict_custom(df):
-    cols = list(df)
-    col_arr_map = {col: df[col].astype(object).to_numpy() for col in cols}
-    records = []
-    for i in range(len(df)):
-        record = {col: col_arr_map[col][i] for col in cols}
-        records.append(record)
-    return records
+    mas_batch_id = []
+    for start in range(0, len_mas, size):
+        end = start + size
+        if end > len_mas:
+            end = len_mas
 
+        mas_batch_id.append([start, end])
 
-def find(
-    img_path,
-    db_path,
-    model_name="VGG-Face",
-    distance_metric="cosine",
-    enforce_detection=True,
-    detector_backend="opencv",
-    align=True,
-    normalization="base",
-    silent=False,
-    threshold_split=True,
-    db_dataframe=None
+    return mas_batch_id
+
+def find_custom(
+        img_path,
+        db_path,
+        model_name="VGG-Face",
+        distance_metric="cosine",
+        enforce_detection=True,
+        detector_backend="opencv",
+        align=True,
+        normalization="base",
+        silent=False,
+        threshold_split=True,
+        db_dataframe=None
 ):
-
     """
     This function applies verification several times and find the identities in a database
 
@@ -470,9 +459,138 @@ def find(
 
             detector_backend (string): set face detector backend to opencv, retinaface, mtcnn, ssd,
             dlib or mediapipe
-            
+
             align (boolean): alignment according to the eye positions.
-            
+
+            normalization (string): normalize the input image before feeding to model
+
+            silent (boolean): disable some logging and progress bars
+
+            threshold_split (boolean): disable or enable threshold, if disable 'dataframes' results
+            will contain all distances
+
+    Returns:
+            This function returns list of pandas data frame. Each item of the list corresponding to
+            an identity in the img_path.
+    """
+
+    tic = time.time()
+    target_size = functions.find_target_size(model_name=model_name)
+
+    target_objs = functions.extract_faces(
+        img=img_path,
+        target_size=target_size,
+        detector_backend=detector_backend,
+        grayscale=False,
+        enforce_detection=enforce_detection,
+        align=align,
+    )
+    target_img, target_region, _ = target_objs[0]
+
+    target_embedding_obj = represent(
+        img_path=target_img,
+        model_name='ArcFace',
+        enforce_detection=True,
+        detector_backend="skip",
+        align=False,
+        normalization='base',
+    )
+
+    target_representation = target_embedding_obj[0]["embedding"]
+    target_representation = transform_vector(target_representation)
+
+    def calc_distances(data_list, conn):
+        dis = []
+        for i in range(len(data_list)):
+            # data_list[i][1] = dst.findCosineDistance(data_list[i][1], target_representation)
+            dis.append([data_list[i][0], dst.findCosineDistance(data_list[i][1], target_representation)])
+        conn.send(dis)
+        conn.close()
+
+    df_list_splitted_ids = split_batch(db_dataframe, 5000)
+    splitted_on = len(df_list_splitted_ids)
+    print(df_list_splitted_ids)
+    print(f'splitted on {str(splitted_on)} parts')
+
+    processes = []
+    pipe_connects = []
+    distances = []
+    for batch_ids in df_list_splitted_ids:
+        parent_conn, child_conn = multiprocessing.Pipe()
+        case_proc = multiprocessing.Process(target=calc_distances,
+                                            args=(db_dataframe[batch_ids[0]:batch_ids[1]], child_conn,))
+        processes.append(case_proc)
+        pipe_connects.append(parent_conn)
+
+    for process in processes:
+        process.start()
+
+    for pipe_connect in pipe_connects:
+        distances = distances + pipe_connect.recv()
+
+    for process in processes:
+        process.join()
+
+    # for i in range(len(db_dataframe)):
+    #     db_dataframe[i][1] = dst.findCosineDistance(db_dataframe[i][1], target_representation)
+
+    column_dictance = f"{model_name}_{distance_metric}"
+    result_df = pd.DataFrame(distances, columns=["identity", column_dictance])
+
+    if threshold_split:
+        threshold = dst.findThreshold(model_name, distance_metric)
+        result_df = result_df[result_df[column_dictance] <= threshold]
+    result_df = result_df.sort_values(by=[column_dictance], ascending=True).reset_index(drop=True)
+
+    toc = time.time()
+    if not silent:
+        print("find function lasts ", toc - tic, " seconds")
+
+    return [result_df]
+
+
+def find(
+        img_path,
+        db_path,
+        model_name="VGG-Face",
+        distance_metric="cosine",
+        enforce_detection=True,
+        detector_backend="opencv",
+        align=True,
+        normalization="base",
+        silent=False,
+        threshold_split=True,
+        db_dataframe=None
+):
+    """
+    This function applies verification several times and find the identities in a database
+
+    Parameters:
+            db_dataframe: if not None will be ignored db_path
+            dataframe must be contained columns ["identity", f"{model_name}_representation"]
+            identity - file_path, _representation - vectors
+            img_path: exact image path, numpy array (BGR) or based64 encoded image.
+            Source image can have many faces. Then, result will be the size of number of
+            faces in the source image.
+
+            db_path (string): You should store some image files in a folder and pass the
+            exact folder path to this. A database image can also have many faces.
+            Then, all detected faces in db side will be considered in the decision.
+
+            model_name (string): VGG-Face, Facenet, Facenet512, OpenFace, DeepFace, DeepID,
+            Dlib, ArcFace, SFace or Ensemble
+
+            distance_metric (string): cosine, euclidean, euclidean_l2
+
+            enforce_detection (bool): The function throws exception if a face could not be detected.
+            Set this to True if you don't want to get exception. This might be convenient for low
+            resolution images.
+
+            detector_backend (string): set face detector backend to opencv, retinaface, mtcnn, ssd,
+            dlib or mediapipe
+
+            align (boolean): alignment according to the eye positions.
+
             normalization (string): normalize the input image before feeding to model
 
             silent (boolean): disable some logging and progress bars
@@ -498,7 +616,6 @@ def find(
     file_name = f"representations_{model_name}.pkl"
     file_name = file_name.replace("-", "_").lower()
 
-
     if db_dataframe is None:
         if path.exists(db_path + "/" + file_name):
 
@@ -521,10 +638,10 @@ def find(
             for r, _, f in os.walk(db_path):
                 for file in f:
                     if (
-                        (".jpg" in file.lower())
-                        or (".jpeg" in file.lower())
-                        or (".png" in file.lower())
-                        or (".webp" in file.lower())
+                            (".jpg" in file.lower())
+                            or (".jpeg" in file.lower())
+                            or (".png" in file.lower())
+                            or (".webp" in file.lower())
                     ):
                         exact_path = r + "/" + file
                         employees.append(exact_path)
@@ -593,8 +710,6 @@ def find(
     else:
         df = db_dataframe.copy()
 
-    df_list = to_dict_custom(df)
-
     # img path might have more than once face
     target_objs = functions.extract_faces(
         img=img_path,
@@ -626,64 +741,25 @@ def find(
         result_df["source_w"] = target_region["w"]
         result_df["source_h"] = target_region["h"]
 
-        def calc_distances(vectors, conn):
-            distances = []
-            for vector_data in vectors:
-                source_representation = vector_data[f"{model_name}_representation"]
-
-                if distance_metric == "cosine":
-                    distance = dst.findCosineDistance(source_representation, target_representation)
-                elif distance_metric == "euclidean":
-                    distance = dst.findEuclideanDistance(source_representation, target_representation)
-                elif distance_metric == "euclidean_l2":
-                    distance = dst.findEuclideanDistance(
-                        dst.l2_normalize(source_representation),
-                        dst.l2_normalize(target_representation),
-                    )
-                else:
-                    raise ValueError(f"invalid distance metric passes - {distance_metric}")
-
-                distances.append(distance)
-            conn.send(distances)
-
-        # def calc_distances(vectors, conn):
-        #     source_representations = np.array([vector_data[f"{model_name}_representation"][0] for vector_data in vectors])
-        #     source_representations2 = np.array([vector_data[f"{model_name}_representation"][1] for vector_data in vectors])
-        #
-        #     # a = np.matmul(np.transpose(case_vector1[0]), case_vector2[0])
-        #     #     return 1 - (a / (case_vector1[1] * case_vector2[1]))
-        #
-        #     distances = 1 - np.matmul(source_representations, target_representation[0]) / (
-        #             source_representations2 * target_representation[1])
-        #     conn.send(distances.tolist())
-
-        df_list_splitted_ids = split_batch(df_list, 5000)
-        splitted_on = len(df_list_splitted_ids)
-        print(df_list_splitted_ids)
-        print(f'splitted on {str(splitted_on)} parts')
-
-        processes = []
-        pipe_connects = []
         distances = []
-        for batch_ids in tqdm(df_list_splitted_ids):
-            parent_conn, child_conn = multiprocessing.Pipe()
-            case_proc = multiprocessing.Process(target=calc_distances,
-                                                args=(df_list[batch_ids[0]:batch_ids[1]], child_conn,))
-            processes.append(case_proc)
-            pipe_connects.append(parent_conn)
+        for index, instance in df.iterrows():
+            source_representation = instance[f"{model_name}_representation"]
 
-        for process in processes:
-            process.start()
+            if distance_metric == "cosine":
+                distance = dst.findCosineDistance(source_representation, target_representation)
+            elif distance_metric == "euclidean":
+                distance = dst.findEuclideanDistance(source_representation, target_representation)
+            elif distance_metric == "euclidean_l2":
+                distance = dst.findEuclideanDistance(
+                    dst.l2_normalize(source_representation),
+                    dst.l2_normalize(target_representation),
+                )
+            else:
+                raise ValueError(f"invalid distance metric passes - {distance_metric}")
 
-        for process in processes:
-            process.join()
+            distances.append(distance)
 
-        for pipe_connect in pipe_connects:
-            distances = distances + pipe_connect.recv()
-
-        # print(distances)
-
-        # ---------------------------
+            # ---------------------------
 
         result_df[f"{model_name}_{distance_metric}"] = distances
 
@@ -708,14 +784,13 @@ def find(
 
 
 def represent(
-    img_path,
-    model_name="VGG-Face",
-    enforce_detection=True,
-    detector_backend="opencv",
-    align=True,
-    normalization="base",
+        img_path,
+        model_name="VGG-Face",
+        enforce_detection=True,
+        detector_backend="opencv",
+        align=True,
+        normalization="base",
 ):
-
     """
     This function represents facial images as vectors. The function uses convolutional neural
     networks models to generate vector embeddings.
@@ -800,16 +875,15 @@ def represent(
 
 
 def stream(
-    db_path="",
-    model_name="VGG-Face",
-    detector_backend="opencv",
-    distance_metric="cosine",
-    enable_face_analysis=True,
-    source=0,
-    time_threshold=5,
-    frame_threshold=5,
+        db_path="",
+        model_name="VGG-Face",
+        detector_backend="opencv",
+        distance_metric="cosine",
+        enable_face_analysis=True,
+        source=0,
+        time_threshold=5,
+        frame_threshold=5,
 ):
-
     """
     This function applies real time face recognition and facial attribute analysis
 
@@ -857,12 +931,12 @@ def stream(
 
 
 def extract_faces(
-    img_path,
-    target_size=(224, 224),
-    detector_backend="opencv",
-    enforce_detection=True,
-    align=True,
-    grayscale=False,
+        img_path,
+        target_size=(224, 224),
+        detector_backend="opencv",
+        enforce_detection=True,
+        align=True,
+        grayscale=False,
 ):
     """
     This function applies pre-processing stages of a face recognition pipeline
@@ -924,7 +998,7 @@ def extract_faces(
 
 @deprecated(version="0.0.78", reason="Use DeepFace.extract_faces instead of DeepFace.detectFace")
 def detectFace(
-    img_path, target_size=(224, 224), detector_backend="opencv", enforce_detection=True, align=True
+        img_path, target_size=(224, 224), detector_backend="opencv", enforce_detection=True, align=True
 ):
     """
     Deprecated function. Use extract_faces for same functionality.
