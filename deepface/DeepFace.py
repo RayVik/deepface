@@ -5,6 +5,7 @@ import warnings
 import time
 import pickle
 import logging
+import multiprocessing
 
 # 3rd party dependencies
 import numpy as np
@@ -84,6 +85,23 @@ def build_model(model_name):
             raise ValueError(f"Invalid model_name passed - {model_name}")
 
     return model_obj[model_name]
+
+
+def split_batch(mas, size):
+    """
+    Divide the input list into batches and create a two-dimensional list with indices
+    """
+    len_mas = len(mas)
+
+    mas_batch_id = []
+    for start in range(0, len_mas, size):
+        end = start + size
+        if end > len_mas:
+            end = len_mas
+
+        mas_batch_id.append([start, end])
+
+    return mas_batch_id
 
 
 def verify(
@@ -401,6 +419,17 @@ def prepocessing_model(path):
     with open(path, 'wb') as f:
         pickle.dump(model, f)
 
+
+def to_dict_custom(df):
+    cols = list(df)
+    col_arr_map = {col: df[col].astype(object).to_numpy() for col in cols}
+    records = []
+    for i in range(len(df)):
+        record = {col: col_arr_map[col][i] for col in cols}
+        records.append(record)
+    return records
+
+
 def find(
     img_path,
     db_path,
@@ -564,6 +593,7 @@ def find(
     else:
         df = db_dataframe.copy()
 
+    df_list = to_dict_custom(df)
 
     # img path might have more than once face
     target_objs = functions.extract_faces(
@@ -596,25 +626,64 @@ def find(
         result_df["source_w"] = target_region["w"]
         result_df["source_h"] = target_region["h"]
 
+        def calc_distances(vectors, conn):
+            distances = []
+            for vector_data in vectors:
+                source_representation = vector_data[f"{model_name}_representation"]
+
+                if distance_metric == "cosine":
+                    distance = dst.findCosineDistance(source_representation, target_representation)
+                elif distance_metric == "euclidean":
+                    distance = dst.findEuclideanDistance(source_representation, target_representation)
+                elif distance_metric == "euclidean_l2":
+                    distance = dst.findEuclideanDistance(
+                        dst.l2_normalize(source_representation),
+                        dst.l2_normalize(target_representation),
+                    )
+                else:
+                    raise ValueError(f"invalid distance metric passes - {distance_metric}")
+
+                distances.append(distance)
+            conn.send(distances)
+
+        # def calc_distances(vectors, conn):
+        #     source_representations = np.array([vector_data[f"{model_name}_representation"][0] for vector_data in vectors])
+        #     source_representations2 = np.array([vector_data[f"{model_name}_representation"][1] for vector_data in vectors])
+        #
+        #     # a = np.matmul(np.transpose(case_vector1[0]), case_vector2[0])
+        #     #     return 1 - (a / (case_vector1[1] * case_vector2[1]))
+        #
+        #     distances = 1 - np.matmul(source_representations, target_representation[0]) / (
+        #             source_representations2 * target_representation[1])
+        #     conn.send(distances.tolist())
+
+        df_list_splitted_ids = split_batch(df_list, 5000)
+        splitted_on = len(df_list_splitted_ids)
+        print(df_list_splitted_ids)
+        print(f'splitted on {str(splitted_on)} parts')
+
+        processes = []
+        pipe_connects = []
         distances = []
-        for index, instance in df.iterrows():
-            source_representation = instance[f"{model_name}_representation"]
+        for batch_ids in tqdm(df_list_splitted_ids):
+            parent_conn, child_conn = multiprocessing.Pipe()
+            case_proc = multiprocessing.Process(target=calc_distances,
+                                                args=(df_list[batch_ids[0]:batch_ids[1]], child_conn,))
+            processes.append(case_proc)
+            pipe_connects.append(parent_conn)
 
-            if distance_metric == "cosine":
-                distance = dst.findCosineDistance(source_representation, target_representation)
-            elif distance_metric == "euclidean":
-                distance = dst.findEuclideanDistance(source_representation, target_representation)
-            elif distance_metric == "euclidean_l2":
-                distance = dst.findEuclideanDistance(
-                    dst.l2_normalize(source_representation),
-                    dst.l2_normalize(target_representation),
-                )
-            else:
-                raise ValueError(f"invalid distance metric passes - {distance_metric}")
+        for process in processes:
+            process.start()
 
-            distances.append(distance)
+        for process in processes:
+            process.join()
 
-            # ---------------------------
+        for pipe_connect in pipe_connects:
+            distances = distances + pipe_connect.recv()
+
+        # print(distances)
+
+        # ---------------------------
 
         result_df[f"{model_name}_{distance_metric}"] = distances
 
@@ -795,7 +864,6 @@ def extract_faces(
     align=True,
     grayscale=False,
 ):
-
     """
     This function applies pre-processing stages of a face recognition pipeline
     including detection and alignment
@@ -860,7 +928,7 @@ def detectFace(
 ):
     """
     Deprecated function. Use extract_faces for same functionality.
-    
+
     This function applies pre-processing stages of a face recognition pipeline
     including detection and alignment
 
@@ -885,7 +953,7 @@ def detectFace(
 
     Returns:
             detected and aligned face as numpy array
-            
+
     """
     print("⚠️ Function detectFace is deprecated. Use extract_faces instead.")
     face_objs = extract_faces(
