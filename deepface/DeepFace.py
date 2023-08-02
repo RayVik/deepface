@@ -732,6 +732,7 @@ def find(
         # ----------------------------
         # now, we got representations for facial database
         df = pd.DataFrame(representations, columns=["identity", f"{model_name}_representation"])
+        # Преобразование векторов в другой формат, т.к. у нас измененное сравнение векторов
         df[f"{model_name}_representation"] = df[f"{model_name}_representation"].apply(lambda x: transform_vector(x))
     else:
         df = db_dataframe.copy()
