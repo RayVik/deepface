@@ -583,7 +583,7 @@ def find_sklearn(
     # 4) Обработка для вывода
     df = pd.DataFrame(mas_model_path, columns=["identity"])
     df[column_dictance] = similarities
-
+    df = df.sort_values(by=[column_dictance], ascending=True).reset_index(drop=True)
 
     return df
 
