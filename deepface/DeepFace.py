@@ -387,6 +387,170 @@ def analyze(
 
     return resp_objects
 
+def find_sklearn_n_img(
+        mas_img_path,
+        db_path=None,
+        model_name="VGG-Face",
+        enforce_detection=True,
+        detector_backend="opencv",
+        align=True,
+        silent=False,
+        normalization="base",
+        db_dataframe=None,
+):
+    distance_metric = "cosine"
+    # ---------------------------------
+    # 1) Подгрузка модели
+
+    target_size = functions.find_target_size(model_name=model_name)
+    file_name = f"representations_{model_name}.pkl"
+    file_name = file_name.replace("-", "_").lower()
+
+    # Если нет массива, но есть путь, то создаем модель
+    if db_dataframe is None and db_path is None:
+        assert False, 'ПЕРЕДАЙТЕ ПУТЬ ИЛИ МОДЕЛЬ'
+    elif db_dataframe is None and db_path is not None:
+
+        if os.path.isdir(db_path) is not True:
+            raise ValueError("Passed db_path does not exist!")
+
+        if path.exists(db_path + "/" + file_name):
+
+            if not silent:
+                print(
+                    f"WARNING: Representations for images in {db_path} folder were previously stored"
+                    + f" in {file_name}. If you added new instances after the creation, then please "
+                    + "delete this file and call find function again. It will create it again."
+                )
+
+            with open(f"{db_path}/{file_name}", "rb") as f:
+                representations = pickle.load(f)
+
+            if not silent:
+                print("There are ", len(representations), " representations found in ", file_name)
+
+        else:  # create representation.pkl from scratch
+            employees = []
+
+            for r, _, f in os.walk(db_path):
+                for file in f:
+                    if (
+                            (".jpg" in file.lower())
+                            or (".jpeg" in file.lower())
+                            or (".png" in file.lower())
+                            or (".webp" in file.lower())
+                    ):
+                        exact_path = r + "/" + file
+                        employees.append(exact_path)
+
+            if len(employees) == 0:
+                raise ValueError(
+                    "There is no image in ",
+                    db_path,
+                    " folder! Validate .jpg or .png files exist in this path.",
+                )
+
+            # ------------------------
+            # find representations for db images
+
+            representations = []
+
+            # for employee in employees:
+            pbar = tqdm(
+                range(0, len(employees)),
+                desc="Finding representations",
+                disable=silent,
+            )
+            for index in pbar:
+                employee = employees[index]
+
+                img_objs = functions.extract_faces(
+                    img=employee,
+                    target_size=target_size,
+                    detector_backend=detector_backend,
+                    grayscale=False,
+                    enforce_detection=enforce_detection,
+                    align=align,
+                )
+
+                for img_content, _, _ in img_objs:
+                    embedding_obj = represent(
+                        img_path=img_content,
+                        model_name=model_name,
+                        enforce_detection=enforce_detection,
+                        detector_backend="skip",
+                        align=align,
+                        normalization=normalization,
+                    )
+
+                    img_representation = embedding_obj[0]["embedding"]
+
+                    instance = []
+                    instance.append(employee)
+                    instance.append(img_representation)
+                    representations.append(instance)
+
+            # -------------------------------
+
+            with open(f"{db_path}/{file_name}", "wb") as f:
+                pickle.dump(representations, f)
+            if not silent:
+                print(
+                    f"Representations stored in {db_path}/{file_name} file."
+                    + "Please delete this file when you add new identities in your database."
+                )
+
+        # ----------------------------
+        # now, we got representations for facial database
+    elif db_dataframe is not None:
+        representations = db_dataframe
+
+    # ---------------------------------
+    mas_vector_img = [0] * len(mas_img_path)
+    for i, img_path in enumerate(mas_img_path):
+        # 2) Получение вектора фото
+        target_objs = functions.extract_faces(
+            img=img_path,
+            target_size=target_size,
+            detector_backend=detector_backend,
+            grayscale=False,
+            enforce_detection=enforce_detection,
+            align=align,
+        )
+        target_img, target_region, _ = target_objs[0]
+        target_embedding_obj = represent(
+            img_path=target_img,
+            model_name='ArcFace',
+            enforce_detection=True,
+            detector_backend="skip",
+            align=False,
+            normalization='base',
+        )
+        column_dictance = f"{model_name}_{distance_metric}"
+        target_representation = target_embedding_obj[0]["embedding"]
+        mas_vector_img[i] = target_representation
+
+    # ---------------------------------
+    # 3) Сравнение векторов
+
+    # Вытаскаиваем массив с векторами и массив с именами
+    mas_model_vectors = [i[1] for i in representations]
+    mas_model_path = [i[0] for i in representations]
+
+    res = cosine_similarity(mas_model_vectors, mas_vector_img)
+    similarities = 1 - cosine_similarity(mas_model_vectors, mas_vector_img)
+    #
+    #
+    #
+    # ---------------------------------
+    # 4) Обработка для вывода
+    get_df = lambda mas_path, mas_val: pd.DataFrame([mas_path, mas_val]).T. \
+        rename(columns={0: 'identity', 1: column_dictance}). \
+        sort_values(by=[column_dictance], ascending=True). \
+        reset_index(drop=True)
+    result = [get_df(mas_path=mas_model_path, mas_val=mas_val) for mas_val in similarities.T]
+
+    return result, mas_vector_img
 
 def transform_vector(vector):
     """
