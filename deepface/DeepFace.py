@@ -537,7 +537,6 @@ def find_sklearn_n_img(
     mas_model_vectors = [i[1] for i in representations]
     mas_model_path = [i[0] for i in representations]
 
-    res = cosine_similarity(mas_model_vectors, mas_vector_img)
     similarities = 1 - cosine_similarity(mas_model_vectors, mas_vector_img)
     #
     #
