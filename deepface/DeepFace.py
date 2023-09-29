@@ -3,6 +3,7 @@ import os
 from os import path
 import warnings
 from sklearn.metrics.pairwise import cosine_similarity
+from scipy.spatial.distance import cdist
 import time
 import pickle
 import logging
@@ -734,11 +735,17 @@ def find_sklearn(
     # 3) Сравнение векторов
 
     # Вытаскаиваем массив с векторами и массив с именами
-    mas_model_vectors = [i[1] for i in representations]
-    mas_model_path = [i[0] for i in representations]
+    # mas_model_vectors = [i[1] for i in representations]
+    # mas_model_path = [i[0] for i in representations]
+    # target_representation = [target_representation]
+    # similarities = 1 - cosine_similarity(mas_model_vectors, target_representation)
 
-    target_representation = [target_representation]
-    similarities = 1 - cosine_similarity(mas_model_vectors, target_representation)
+    mas_model_vectors = np.stack(representations[..., 1])
+    mas_model_path = [i[0] for i in representations]
+    target_representation = np.array([target_representation])
+
+
+    similarities = cdist(mas_model_vectors, target_representation, 'cosine')
 
 
 
