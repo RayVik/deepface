@@ -596,6 +596,7 @@ def find_sklearn(
         silent=False,
         normalization="base",
         db_dataframe=None,
+        mas_path_vector=None,
 ):
     distance_metric = "cosine"
     # ---------------------------------
@@ -740,8 +741,8 @@ def find_sklearn(
     # target_representation = [target_representation]
     # similarities = 1 - cosine_similarity(mas_model_vectors, target_representation)
 
-    mas_model_vectors = np.stack(representations[..., 1])
-    mas_model_path = [i[0] for i in representations]
+    mas_model_vectors = representations
+    mas_model_path = mas_path_vector
     target_representation = np.array([target_representation])
 
 
