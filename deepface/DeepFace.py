@@ -1059,8 +1059,8 @@ def find(
             # -------------------------------
 
             with open(f"{db_path}/{file_name}", "wb") as f:
-                pickle.dump(representations, f)
-            prepocessing_model(path=f"{db_path}/{file_name}")
+                pickle.dump(pd.DataFrame(representations).values, f)
+                # prepocessing_model(path=f"{db_path}/{file_name}")
             if not silent:
                 print(
                     f"Representations stored in {db_path}/{file_name} file."
