@@ -745,7 +745,8 @@ def find_sklearn(
     mas_model_path = mas_path_vector
     target_representation = np.array([target_representation])
 
-
+    if len(mas_model_vectors)==0 or len(target_representation)==0:
+        return pd.DataFrame(columns=['identity',column_dictance])
     similarities = cdist(mas_model_vectors, target_representation, 'cosine')
 
 
