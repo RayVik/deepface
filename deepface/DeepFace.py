@@ -1052,6 +1052,7 @@ def find(
                     img_representation = embedding_obj[0]["embedding"]
 
                     instance = []
+                    employee = employee.replace('\\', '/')
                     instance.append(employee)
                     instance.append(img_representation)
                     representations.append(instance)
