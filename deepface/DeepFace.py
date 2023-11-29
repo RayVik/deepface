@@ -7,6 +7,7 @@ from scipy.spatial.distance import cdist
 import time
 import pickle
 import logging
+import requests
 import multiprocessing
 
 # 3rd party dependencies
@@ -16,6 +17,7 @@ from tqdm import tqdm
 import cv2
 import tensorflow as tf
 from deprecated import deprecated
+import json
 
 # package dependencies
 from deepface.basemodels import (
@@ -597,115 +599,117 @@ def find_sklearn(
         normalization="base",
         db_dataframe=None,
         mas_path_vector=None,
+        use_api=False,
+        metadata=None
 ):
     distance_metric = "cosine"
     # ---------------------------------
     # 1) Подгрузка модели
 
-
-
     target_size = functions.find_target_size(model_name=model_name)
-    file_name = f"representations_{model_name}.pkl"
-    file_name = file_name.replace("-", "_").lower()
+    if not use_api:
 
-    # Если нет массива, но есть путь, то создаем модель
-    if db_dataframe is None and db_path is None:
-        assert False, 'ПЕРЕДАЙТЕ ПУТЬ ИЛИ МОДЕЛЬ'
-    elif db_dataframe is None and db_path is not None:
+        file_name = f"representations_{model_name}.pkl"
+        file_name = file_name.replace("-", "_").lower()
 
-        if os.path.isdir(db_path) is not True:
-            raise ValueError("Passed db_path does not exist!")
+        # Если нет массива, но есть путь, то создаем модель
+        if db_dataframe is None and db_path is None:
+            assert False, 'ПЕРЕДАЙТЕ ПУТЬ ИЛИ МОДЕЛЬ'
+        elif db_dataframe is None and db_path is not None:
 
-        if path.exists(db_path + "/" + file_name):
+            if os.path.isdir(db_path) is not True:
+                raise ValueError("Passed db_path does not exist!")
 
-            if not silent:
-                print(
-                    f"WARNING: Representations for images in {db_path} folder were previously stored"
-                    + f" in {file_name}. If you added new instances after the creation, then please "
-                    + "delete this file and call find function again. It will create it again."
-                )
+            if path.exists(db_path + "/" + file_name):
 
-            with open(f"{db_path}/{file_name}", "rb") as f:
-                representations = pickle.load(f)
-
-            if not silent:
-                print("There are ", len(representations), " representations found in ", file_name)
-
-        else:  # create representation.pkl from scratch
-            employees = []
-
-            for r, _, f in os.walk(db_path):
-                for file in f:
-                    if (
-                            (".jpg" in file.lower())
-                            or (".jpeg" in file.lower())
-                            or (".png" in file.lower())
-                            or (".webp" in file.lower())
-                    ):
-                        exact_path = r + "/" + file
-                        employees.append(exact_path)
-
-            if len(employees) == 0:
-                raise ValueError(
-                    "There is no image in ",
-                    db_path,
-                    " folder! Validate .jpg or .png files exist in this path.",
-                )
-
-            # ------------------------
-            # find representations for db images
-
-            representations = []
-
-            # for employee in employees:
-            pbar = tqdm(
-                range(0, len(employees)),
-                desc="Finding representations",
-                disable=silent,
-            )
-            for index in pbar:
-                employee = employees[index]
-
-                img_objs = functions.extract_faces(
-                    img=employee,
-                    target_size=target_size,
-                    detector_backend=detector_backend,
-                    grayscale=False,
-                    enforce_detection=enforce_detection,
-                    align=align,
-                )
-
-                for img_content, _, _ in img_objs:
-                    embedding_obj = represent(
-                        img_path=img_content,
-                        model_name=model_name,
-                        enforce_detection=enforce_detection,
-                        detector_backend="skip",
-                        align=align,
-                        normalization=normalization,
+                if not silent:
+                    print(
+                        f"WARNING: Representations for images in {db_path} folder were previously stored"
+                        + f" in {file_name}. If you added new instances after the creation, then please "
+                        + "delete this file and call find function again. It will create it again."
                     )
 
-                    img_representation = embedding_obj[0]["embedding"]
+                with open(f"{db_path}/{file_name}", "rb") as f:
+                    representations = pickle.load(f)
 
-                    instance = []
-                    instance.append(employee)
-                    instance.append(img_representation)
-                    representations.append(instance)
+                if not silent:
+                    print("There are ", len(representations), " representations found in ", file_name)
 
-            # -------------------------------
+            else:  # create representation.pkl from scratch
+                employees = []
 
-            with open(f"{db_path}/{file_name}", "wb") as f:
-                pickle.dump(representations, f)
-            if not silent:
-                print(
-                    f"Representations stored in {db_path}/{file_name} file."
-                    + "Please delete this file when you add new identities in your database."
+                for r, _, f in os.walk(db_path):
+                    for file in f:
+                        if (
+                                (".jpg" in file.lower())
+                                or (".jpeg" in file.lower())
+                                or (".png" in file.lower())
+                                or (".webp" in file.lower())
+                        ):
+                            exact_path = r + "/" + file
+                            employees.append(exact_path)
+
+                if len(employees) == 0:
+                    raise ValueError(
+                        "There is no image in ",
+                        db_path,
+                        " folder! Validate .jpg or .png files exist in this path.",
+                    )
+
+                # ------------------------
+                # find representations for db images
+
+                representations = []
+
+                # for employee in employees:
+                pbar = tqdm(
+                    range(0, len(employees)),
+                    desc="Finding representations",
+                    disable=silent,
                 )
+                for index in pbar:
+                    employee = employees[index]
 
-        # ----------------------------
-        # now, we got representations for facial database
-    elif db_dataframe is not None:
-        representations = db_dataframe
+                    img_objs = functions.extract_faces(
+                        img=employee,
+                        target_size=target_size,
+                        detector_backend=detector_backend,
+                        grayscale=False,
+                        enforce_detection=enforce_detection,
+                        align=align,
+                    )
+
+                    for img_content, _, _ in img_objs:
+                        embedding_obj = represent(
+                            img_path=img_content,
+                            model_name=model_name,
+                            enforce_detection=enforce_detection,
+                            detector_backend="skip",
+                            align=align,
+                            normalization=normalization,
+                        )
+
+                        img_representation = embedding_obj[0]["embedding"]
+
+                        instance = []
+                        instance.append(employee)
+                        instance.append(img_representation)
+                        representations.append(instance)
+
+                # -------------------------------
+
+                with open(f"{db_path}/{file_name}", "wb") as f:
+                    pickle.dump(representations, f)
+                if not silent:
+                    print(
+                        f"Representations stored in {db_path}/{file_name} file."
+                        + "Please delete this file when you add new identities in your database."
+                    )
+
+            # ----------------------------
+            # now, we got representations for facial database
+        elif db_dataframe is not None:
+            representations = db_dataframe
 
     # ---------------------------------
     # 2) Получение вектора фото
@@ -740,24 +744,40 @@ def find_sklearn(
     # mas_model_path = [i[0] for i in representations]
     # target_representation = [target_representation]
     # similarities = 1 - cosine_similarity(mas_model_vectors, target_representation)
+    user_info = None
+    images = None
+    if use_api:
+        payload = {
+            'target_representation': target_representation,
+            'metadata': metadata
+        }
+        headers = {
+            'Content-type': 'application/json',
+        }
+        response = requests.post('http://127.0.0.1:5005/compare_face', data=json.dumps(payload), headers=headers, timeout=1000)
+        result = response.json()
+        df_data = json.loads(result['data'])
+        user_info = json.loads(result['user_info'])
+        images = result['images']
 
-    mas_model_vectors = representations
-    mas_model_path = mas_path_vector
-    target_representation = np.array([target_representation])
+        df = pd.DataFrame(df_data)
+        user_info = pd.DataFrame(user_info)
+    else:
+        mas_model_vectors = representations
+        mas_model_path = mas_path_vector
+        target_representation = np.array([target_representation])
 
-    if len(mas_model_vectors)==0 or len(target_representation)==0:
-        return pd.DataFrame(columns=['identity',column_dictance])
-    similarities = cdist(mas_model_vectors, target_representation, 'cosine')
+        if len(mas_model_vectors)==0 or len(target_representation)==0:
+            return pd.DataFrame(columns=['identity',column_dictance])
+        similarities = cdist(mas_model_vectors, target_representation, 'cosine')
 
+        # ---------------------------------
+        # 4) Обработка для вывода
+        df = pd.DataFrame(mas_model_path, columns=["identity"])
+        df[column_dictance] = similarities
+        df = df.sort_values(by=[column_dictance], ascending=True).reset_index(drop=True)
 
-
-    # ---------------------------------
-    # 4) Обработка для вывода
-    df = pd.DataFrame(mas_model_path, columns=["identity"])
-    df[column_dictance] = similarities
-    df = df.sort_values(by=[column_dictance], ascending=True).reset_index(drop=True)
-
-    return df
+    return df, user_info, images
 
 
 def find_custom(
