@@ -600,7 +600,8 @@ def find_sklearn(
         db_dataframe=None,
         mas_path_vector=None,
         use_api=False,
-        metadata=None
+        metadata=None,
+        api_url=None
 ):
     distance_metric = "cosine"
     # ---------------------------------
@@ -746,7 +747,7 @@ def find_sklearn(
     # similarities = 1 - cosine_similarity(mas_model_vectors, target_representation)
     user_info = None
     images = None
-    if use_api:
+    if use_api and api_url is not None:
         payload = {
             'target_representation': target_representation,
             'metadata': metadata
@@ -754,7 +755,7 @@ def find_sklearn(
         headers = {
             'Content-type': 'application/json',
         }
-        response = requests.post('http://127.0.0.1:5005/compare_face', data=json.dumps(payload), headers=headers, timeout=1000)
+        response = requests.post(api_url, data=json.dumps(payload), headers=headers, timeout=1000)
         result = response.json()
         df_data = json.loads(result['data'])
         user_info = json.loads(result['user_info'])
