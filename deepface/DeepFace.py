@@ -1,5 +1,6 @@
 # common dependencies
 import os
+import traceback
 from os import path
 import warnings
 from sklearn.metrics.pairwise import cosine_similarity
@@ -755,14 +756,23 @@ def find_sklearn(
         headers = {
             'Content-type': 'application/json',
         }
-        response = requests.post(api_url, data=json.dumps(payload), headers=headers, timeout=1000)
-        result = response.json()
-        df_data = json.loads(result['data'])
-        user_info = json.loads(result['user_info'])
-        images = result['images']
 
-        df = pd.DataFrame(df_data)
-        user_info = pd.DataFrame(user_info)
+        try:
+            response = requests.post(api_url, data=json.dumps(payload), headers=headers, timeout=1000)
+            result = response.json()
+            df_data = json.loads(result['data'])
+            user_info = json.loads(result['user_info'])
+            images = result['images']
+
+            df = pd.DataFrame(df_data)
+            user_info = pd.DataFrame(user_info)
+        except requests.exceptions.ConnectionError as e:
+            print(e)
+            traceback.print_exc()
+            return {
+                'success': False,
+                'error_message': f'error request to {api_url}, {e}'
+            }
     else:
         mas_model_vectors = representations
         mas_model_path = mas_path_vector
@@ -778,7 +788,14 @@ def find_sklearn(
         df[column_dictance] = similarities
         df = df.sort_values(by=[column_dictance], ascending=True).reset_index(drop=True)
 
-    return df, user_info, images
+    # return df, user_info, images
+    return {
+        'df': df,
+        'user_info': user_info,
+        'images': images,
+        'success': True,
+        'error_message': ''
+    }
 
 
 def find_custom(
