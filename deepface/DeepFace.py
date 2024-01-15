@@ -758,7 +758,7 @@ def find_sklearn(
         }
 
         try:
-            response = requests.post(api_url, data=json.dumps(payload), headers=headers, timeout=1000)
+            response = requests.post(api_url, data=json.dumps(payload), headers=headers, timeout=100)
             result = response.json()
             df_data = json.loads(result['data'])
             user_info = json.loads(result['user_info'])
@@ -766,7 +766,7 @@ def find_sklearn(
 
             df = pd.DataFrame(df_data)
             user_info = pd.DataFrame(user_info)
-        except requests.exceptions.ConnectionError as e:
+        except Exception as e:
             print(e)
             traceback.print_exc()
             return {
